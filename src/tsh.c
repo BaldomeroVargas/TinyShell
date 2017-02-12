@@ -283,7 +283,7 @@ int parseline(const char *cmdline, char **argv)
 int builtin_cmd(char **argv) 
 {
 	//quiting casei or killig case
-	if(!strcmp(argv, "kill") || !strcmp(arg,"quit")){
+	if(!strcmp(argv[0], "kill") || !strcmp(argv[0],"quit")){
 		exit(0);
 	}
 
@@ -320,9 +320,18 @@ void do_bgfg(char **argv)
 
 /* 
  * waitfg - Block until process pid is no longer the foreground process
+	else if(!strcmp(argv[0], "fg")){
+
+
+	}
  */
 void waitfg(pid_t pid)
 {
+	//check if current pid is fg
+	//if so just sleep(1)
+	while(pid == fgpid(jobs)){
+		sleep(1);
+	}
 	return;
 }
 
