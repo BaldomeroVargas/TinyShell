@@ -362,8 +362,10 @@ void sigint_handler(int sig)
 	pid_t pid = fgpid(jobs);
 
 	//if FG job exists kill it
+	//ctrl-c affects FG group, thus kill(-pid, sig) is used
+	//kill(-pid,sig) would just send to one process
 	if(pid != 0){
-		kill(pid, sig);
+		kill(-pid, sig);
 	}
 	return;
 }
@@ -379,8 +381,10 @@ void sigtstp_handler(int sig)
 	pid_t pid = fgpid(jobs);
 
 	//if FG job exists kill it
+	//ctrl-z affects FG group, thus kill(-pid,sig) is used
+	//kill(pid, sig) would just send to one process
 	if(pid != 0){
-		kill(pid, sig);
+		kill(-pid, sig);
 	}
 	return;
 }
