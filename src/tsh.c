@@ -179,12 +179,12 @@ void eval(char *cmdline)
 	bg = parseline(cmdline, argv);
 
 	//empty case
-	if(argv[0]) == NULL){
+	if(argv[0] == NULL){
 		return;
 	}
 
 	//if not built in cmd
-	if(!bultin_cmd(argv)){
+	if(!builtin_cmd(argv)){
 
 		pid = fork();
 		//child process runs user job
@@ -196,26 +196,30 @@ void eval(char *cmdline)
 
 			//execve function call, -1=error
 			if(execve(argv[0], argv, environ) < 0){
-				//print something
+				
+				//error message
+				printf("Error: %s not found.\n", argv[0]);
 				exit(0);
 			}
 		}
-	}
-
-
-	//FG job
-	if(!bg){
+	
+		//FG job
+		if(!bg){
 		
-		addjob(jobs,pid,FG,cmdline);
-		waitfg(pid);
+			addjob(jobs,pid,FG,cmdline);
+			printf("before\n");
+			waitfg(pid);
+			printf("after\n");
 
-	}
-	//BG job
-	else{
-		addjob(jobs,pid,BG,cmdline);
-		//print somehting
-	}
+		}
+		//BG job
+		else{
 
+			printf("before\n");
+			addjob(jobs,pid,BG,cmdline);
+			//print somehting
+		}
+	}
 	return;
 }
 
@@ -314,7 +318,75 @@ int builtin_cmd(char **argv)
  * do_bgfg - Execute the builtin bg and fg commands
  */
 void do_bgfg(char **argv) 
-{	
+{
+	//job id holder
+	int jid;
+
+	//not a proper FG/BG command set up
+	if(argv[1] == NULL){
+		printf("Second arguement needed in %s\n", argv[0]);
+		return;
+	}
+
+	//obtaining jid/pid
+
+	//pid is used
+	if(isdigit(argv[1][0])){
+
+		//convert job id string to int
+		jid = atoi(argv[1]);
+		
+		//non existing process
+		if(getjobpid(jobs, jid) == NULL){
+			
+			printf("%d is not a valid process\n", jid);
+			return;
+		}
+
+	}
+	//jid is used
+	else if(argv[1][0] == '%'){
+		
+		//convert job id string to int
+		jid = atoi(&argv[1][1]);
+
+		//job exists
+		if(getjobpid(jobs, jid) != NULL){
+			//obatin pid
+			jid = getjobpid(jobs, jid)->pid;
+		}
+		//job fails
+		else{
+			printf("%d is not a valid job\n", jid);
+			return;
+		}
+
+	}
+	//incorrect command use
+	else{
+		
+		printf("Invalid arguement entry. Must be jobid or pid\n");
+		return;
+
+	}
+
+
+
+	//fg command
+	if(strcmp(argv[0], "fg") == 0){
+		
+		getjobpid(jobs, jid)->state = FG;
+		waitfg(jid);
+
+	}
+
+	//bg command
+	else{
+	
+		getjobpid(jobs,jid)->state = BG;
+		//print statement;
+	}
+
 	return;
 }
 
@@ -327,9 +399,17 @@ void do_bgfg(char **argv)
  */
 void waitfg(pid_t pid)
 {
+
+	struct job_t *cur_fg = getjobpid(jobs,pid);
+
+	if(cur_fg == NULL){
+		return;
+	}
+
 	//check if current pid is fg
 	//if so just sleep(1)
-	while(pid == fgpid(jobs)){
+	//also check if current pid is not null
+	while( cur_fg->state == FG && cur_fg->pid == pid ){
 		sleep(1);
 	}
 	return;
