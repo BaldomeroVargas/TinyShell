@@ -172,6 +172,9 @@ void eval(char *cmdline)
 	int bg;
 	pid_t pid;
 
+	//sigset variable
+	sigset_t signal;
+
 	/*returns x
 	 x=1 : BG job
 	 x=0: FG job
@@ -186,10 +189,15 @@ void eval(char *cmdline)
 	//if not built in cmd
 	if(!builtin_cmd(argv)){
 
+		//blocking 
+		sigprocmask(SIG_BLOCK,&signal , 0);
+
 		pid = fork();
 		//child process runs user job
-		//parent just waits for FG job to finish
 		if(pid == 0){
+
+			//unblock
+			sigprocmask(SIG_UNBLOCK,&signal , 0);
 
 			//resetting group id=0
 			setpgid(0,0);
@@ -202,20 +210,25 @@ void eval(char *cmdline)
 				exit(0);
 			}
 		}
-	
-		//FG job
-		if(!bg){
-		
-			addjob(jobs,pid,FG,cmdline);
-			waitfg(pid);
-
-		}
-		//BG job
+		//parent
 		else{
 
-			addjob(jobs,pid,BG,cmdline);
-			printf("[%d] (%d) %s", pid2jid(pid), pid, cmdline);
+			//FG job
+			if(!bg){
+		
+				addjob(jobs,pid,FG,cmdline);
+				sigprocmask(SIG_UNBLOCK,&signal , 0);
+				waitfg(pid);
+			}
+			//BG job
+			else{
+
+				addjob(jobs,pid,BG,cmdline);
+				sigprocmask(SIG_UNBLOCK,&signal , 0);
+				printf("[%d] (%d) %s", pid2jid(pid), pid, cmdline);
+			}
 		}
+
 	}
 	return;
 }
@@ -284,7 +297,7 @@ int parseline(const char *cmdline, char **argv)
 int builtin_cmd(char **argv) 
 {
 	//quiting casei or killig case
-	if(!strcmp(argv[0], "kill") || !strcmp(argv[0],"quit")){
+	if(!strcmp(argv[0],"quit")){
 		exit(0);
 	}
 
@@ -395,9 +408,23 @@ void waitfg(pid_t pid)
 
 	//check until the process in no longer in fg
 	/******potential error*******/
-	while( pid == fgpid(jobs) ){
-		sleep(0);
-	}
+
+	//this code here works for 10-14 but not 6-9
+	//i do not know why...
+	//it was my initial more complicated approach
+	//then i resulted in a more trivial solution
+	//something with the sleep(1) leaves it in an infinite loop
+
+	/*struct job_t * job;
+	job = getjobpid(jobs,pid);
+
+	while(job != NULL && (job->state == FG)){
+		sleep(1);
+	}*/
+
+	while(pid == fgpid(jobs)){}
+	
+	
 	return;
 }
 
@@ -419,7 +446,7 @@ void sigchld_handler(int sig)
 	int ret_status;
 	pid_t pid;
 
-	//loop while a waint is detected
+	//loop while a wait is detected
 	while((pid = waitpid(fgpid(jobs), &ret_status, WNOHANG|WUNTRACED)) > 0){
 
 		if(WIFSIGNALED(ret_status)){
@@ -442,17 +469,25 @@ void sigchld_handler(int sig)
  *    user types ctrl-c at the keyboard.  Catch it and send it along
  *    to the foreground job.  
  */
+
+
+ //used the acual sig macro instead of parameter bc it gave me errors
+ //and i didnt want to hard code values
 void sigint_handler(int sig) 
 {
 
 	//fethcing pid and jid to match rtest prompts
 	int pid = fgpid(jobs);
+	int jid = pid2jid(pid);
 
 	//if FG job exists kill it
 	//ctrl-c affects FG group, thus kill(-pid,sig) is used
 	//kill(pid, sig) would just send to one process
 	if(pid != 0){
-		kill(-pid, sig);
+		printf("Job [%d] (%d) terminated by signal %d\n", jid, pid, SIGINT);
+		kill(-pid, SIGINT);
+		//this allows 6-9 to work
+		deletejob(jobs,pid);
 	}
 	return;
 
@@ -463,6 +498,9 @@ void sigint_handler(int sig)
  *     the user types ctrl-z at the keyboard. Catch it and suspend the
  *     foreground job by sending it a SIGTSTP.  
  */
+
+ //used the acual sig macro instead of parameter bc it gave me errors
+ //and i didnt want to hard code values
 void sigtstp_handler(int sig) 
 {
 	//fethcing pid and jid to match rtest prompts
@@ -473,10 +511,10 @@ void sigtstp_handler(int sig)
 	//ctrl-z affects FG group, thus kill(-pid,sig) is used
 	//kill(pid, sig) would just send to one process
 	if(pid != 0){
-		printf("Job [%d] (%d) Stopped by signal %d\n", jid, pid, sig);
+		printf("Job [%d] (%d) Stopped by signal %d\n", jid, pid, SIGINT);
+		kill(-pid, SIGTSTP);
 		//changing setting to stop
 		getjobpid(jobs, pid)->state = ST;
-		kill(-pid, sig);
 	}
 	return;
 }
