@@ -198,7 +198,7 @@ void eval(char *cmdline)
 			if(execve(argv[0], argv, environ) < 0){
 				
 				//error message
-				printf("Error: %s not found.\n", argv[0]);
+				printf("%s: Command not found\n", argv[0]);
 				exit(0);
 			}
 		}
@@ -207,17 +207,14 @@ void eval(char *cmdline)
 		if(!bg){
 		
 			addjob(jobs,pid,FG,cmdline);
-			printf("before\n");
 			waitfg(pid);
-			printf("after\n");
 
 		}
 		//BG job
 		else{
 
-			printf("before\n");
 			addjob(jobs,pid,BG,cmdline);
-			//print somehting
+			printf("[%d] (%d) %s", pid2jid(pid), pid, cmdline);
 		}
 	}
 	return;
@@ -320,11 +317,13 @@ int builtin_cmd(char **argv)
 void do_bgfg(char **argv) 
 {
 	//job id holder
+	struct job_t *job;
 	int jid;
+	pid_t pid;
 
 	//not a proper FG/BG command set up
 	if(argv[1] == NULL){
-		printf("Second arguement needed in %s\n", argv[0]);
+		printf("%s command requires PID or %%jobid argument\n", argv[0]);
 		return;
 	}
 
@@ -334,12 +333,12 @@ void do_bgfg(char **argv)
 	if(isdigit(argv[1][0])){
 
 		//convert job id string to int
-		jid = atoi(argv[1]);
+		pid = atoi(argv[1]);
 		
 		//non existing process
-		if(getjobpid(jobs, jid) == NULL){
+		if(!(job = getjobpid(jobs, pid))){
 			
-			printf("%d is not a valid process\n", jid);
+			printf("(%d): No such process\n", pid);
 			return;
 		}
 
@@ -350,41 +349,35 @@ void do_bgfg(char **argv)
 		//convert job id string to int
 		jid = atoi(&argv[1][1]);
 
-		//job exists
-		if(getjobpid(jobs, jid) != NULL){
-			//obatin pid
-			jid = getjobpid(jobs, jid)->pid;
-		}
-		//job fails
-		else{
-			printf("%d is not a valid job\n", jid);
+		//job does not exists
+		if(!(job = getjobjid(jobs, jid))){
+			printf("%d: No such job\n", jid);
 			return;
 		}
 
 	}
 	//incorrect command use
 	else{
-		
-		printf("Invalid arguement entry. Must be jobid or pid\n");
+
+		printf("%s: Argument must be a PID or %%jobid\n", argv[0]);
 		return;
 
 	}
 
 
-
 	//fg command
 	if(strcmp(argv[0], "fg") == 0){
 		
-		getjobpid(jobs, jid)->state = FG;
-		waitfg(jid);
+		job->state = FG;
+		waitfg(job->pid);
 
 	}
 
 	//bg command
 	else{
 	
-		getjobpid(jobs,jid)->state = BG;
-		//print statement;
+		job->state = BG;
+		printf("[%d] (%d) %s", job->jid, job->pid, job->cmdline); 
 	}
 
 	return;
@@ -400,17 +393,10 @@ void do_bgfg(char **argv)
 void waitfg(pid_t pid)
 {
 
-	struct job_t *cur_fg = getjobpid(jobs,pid);
-
-	if(cur_fg == NULL){
-		return;
-	}
-
-	//check if current pid is fg
-	//if so just sleep(1)
-	//also check if current pid is not null
-	while( cur_fg->state == FG && cur_fg->pid == pid ){
-		sleep(1);
+	//check until the process in no longer in fg
+	/******potential error*******/
+	while( pid == fgpid(jobs) ){
+		sleep(0);
 	}
 	return;
 }
@@ -434,7 +420,7 @@ void sigchld_handler(int sig)
 	pid_t pid;
 
 	//loop while a waint is detected
-	while((pid = waitpid(-1, &ret_status, WNOHANG|WUNTRACED)) > 0){
+	while((pid = waitpid(fgpid(jobs), &ret_status, WNOHANG|WUNTRACED)) > 0){
 
 		if(WIFSIGNALED(ret_status)){
 			sigint_handler(sig);
@@ -458,16 +444,18 @@ void sigchld_handler(int sig)
  */
 void sigint_handler(int sig) 
 {
-	//fethcing FG pid
-	pid_t pid = fgpid(jobs);
+
+	//fethcing pid and jid to match rtest prompts
+	int pid = fgpid(jobs);
 
 	//if FG job exists kill it
-	//ctrl-c affects FG group, thus kill(-pid, sig) is used
-	//kill(-pid,sig) would just send to one process
+	//ctrl-c affects FG group, thus kill(-pid,sig) is used
+	//kill(pid, sig) would just send to one process
 	if(pid != 0){
 		kill(-pid, sig);
 	}
 	return;
+
 }
 
 /*
@@ -477,13 +465,17 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig) 
 {
-	//fethcing FG pid
-	pid_t pid = fgpid(jobs);
+	//fethcing pid and jid to match rtest prompts
+	int pid = fgpid(jobs);
+	int jid = pid2jid(pid);
 
 	//if FG job exists kill it
 	//ctrl-z affects FG group, thus kill(-pid,sig) is used
 	//kill(pid, sig) would just send to one process
 	if(pid != 0){
+		printf("Job [%d] (%d) Stopped by signal %d\n", jid, pid, sig);
+		//changing setting to stop
+		getjobpid(jobs, pid)->state = ST;
 		kill(-pid, sig);
 	}
 	return;
