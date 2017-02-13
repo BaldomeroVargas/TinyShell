@@ -428,6 +428,26 @@ void waitfg(pid_t pid)
  */
 void sigchld_handler(int sig) 
 {
+
+	//pid and return status variables
+	int ret_status;
+	pid_t pid;
+
+	//loop while a waint is detected
+	while((pid = waitpid(-1, &ret_status, WNOHANG|WUNTRACED)) > 0){
+
+		if(WIFSIGNALED(ret_status)){
+			sigint_handler(sig);
+		}
+		else if(WIFSTOPPED(ret_status)){
+			sigtstp_handler(sig);
+		}
+		else if(WIFEXITED(ret_status)){
+			deletejob(jobs, pid);
+		}
+
+	}
+
 	return;
 }
 
